@@ -355,7 +355,27 @@ unsigned float_neg(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_i2f(int x) {
-  return 2;
+  if(x==0) return 0;//float 0.0's bits are all 0
+  if(x==0x80000000) return 0xCF000000; //x=-2^31 avoid underflow when negative
+  int sign=(x>>31) &1;
+  if(sign) x=-x;
+  int i=30;
+  while(!(x>>i)) --i;//see the highest bits of x;
+  int exponent=i+127;// 127 is bias
+  x=x<<(31-i);//clean all those zeros of high bits
+  fraction_mask=0x7fffff;//(1<<23)-1
+  int fraction=(x>>8)&fraction_mask;//right shift 8 bits to become the fraction
+  int error=x & 0xff;//the lowest 8 bit of x
+  //if the error in fraction part is greater than a half, add 1 on the LSB of fraction part
+  //if the error in fraction part is equal to a half and LSB is odd,add 1 on the LSB of fraction part
+  //namely round to even
+  int delta= x>128 || ((x==128)&(fraction &1));
+  fraction=fraction+delta;
+  if(fraction>>23){//if after rounding fraction is longer than 23bits
+    fraction=fraction&fraction_mask;
+    exponent=exponent+1;
+  }
+  return (sign<<31)|(exponent<<23)|fraction;
 }
 /* 
  * float_twice - Return bit-level equivalent of expression 2*f for
@@ -369,5 +389,17 @@ unsigned float_i2f(int x) {
  *   Rating: 4
  */
 unsigned float_twice(unsigned uf) {
-  return 2;
+  int signbit=0x80000000&uf;
+  int ret;
+   /*denormalized, shift sigificand left by one bit(keep sign unchanged) */
+  if(uf&(0x7f800000)==0) {
+    ret=(uf<<1)|(signbit); 
+    return ret;
+  }
+  /*Infinity or NaN, do nothing*/
+  if(uf&(0x7f800000)==0x7f800000) return uf;
+  /*normalized, add exponent by 1,if overflow return inifinity*/
+  ret=uf+1<<23;
+  if(ret&((0x7f800000)==0x7f800000)) ret=((ret>>23)<<23)&signbit;
+  return ret;
 }
