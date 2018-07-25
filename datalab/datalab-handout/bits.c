@@ -154,7 +154,7 @@ int getByte(int x, int n) {
   /*move the nth bytes to the least significant position
   , then bitwise-and 0xFF*/
   int movebits=n<<3;
-  x>>movebits;
+  x=x>>movebits;
   x=x&0xFF;
   return x;
 
@@ -170,9 +170,10 @@ int getByte(int x, int n) {
 int logicalShift(int x, int n) {
   /*first do arithematic rightshift,then bitwise-and a number 
   whose the most n siginificant bits are 0,the rest are 1*/
+  int mask;
   x=x>>n;
   n=(~n+1)+31; 
-  int mask=~(((~0)<<n)<<1);
+  mask=~(((~0)<<n)<<1);
   x=x&mask;
   return x;
 }
@@ -185,31 +186,32 @@ int logicalShift(int x, int n) {
  */
 int bitCount(int x) {
   /*divide and conquer*/
+  int mask1,mask2,mask3,mask4,mask5;
+  int count;
   //mask 01010101...01010101  
-  int mask1=0x55|(0x55<<8);
+  mask1=0x55|(0x55<<8);
   mask1=mask1|(mask1<<16); 
   //mask 00110011...00110011
-  int mask2=0x33|(0x33<<8);
+  mask2=0x33|(0x33<<8);
   mask2=mask2|(mask2<<16);
   //mask 00001111...00001111
-  int mask3=0x0f|(0x0f<<8);
+  mask3=0x0f|(0x0f<<8);
   mask3=mask3|(mask3<<16);
   //mask 0000 0000 1111 1111  0000 0000 1111 1111
-  int mask4=0xff|(0xff<<16);
+  mask4=0xff|(0xff<<16);
   //mask 0000 0000 0000 0000  1111 1111 1111 1111
-  int mask5=0xff|(0xff<<8);
+  mask5=0xff|(0xff<<8);
 
-  int count;
   //groups of 2
-  count=x&mask1+(x>>1)&mask1;
+  count=(x&mask1)+((x>>1)&mask1);
   //groups of 4
-  count=count&mask2+(count>>2)&mask2;
+  count=(count&mask2)+((count>>2)&mask2);
   //groups of 8
-  count=count&mask3+(count>>4)&mask3;
+  count=(count&mask3)+((count>>4)&mask3);
   //groups of 16
-  count=count&mask4+(count>>8)&mask4;
+  count=(count&mask4)+((count>>8)&mask4);
   //groups of 32
-  count=count&mask5+(count>>16)&mask5;
+  count=(count&mask5)+((count>>16)&mask5);
   return count;
 }
 /* 
@@ -247,8 +249,8 @@ int fitsBits(int x, int n) {
   only if the rest bits in its expanding are all equal to its sign bit.
   so we shift x right by n-1, then judge wheather all bits are same*/
   int movebits=n+((~0x1)+1);
-  x=x>>movebits
-  x=~((x+1)>>1);
+  x=x>>movebits;
+  x=!((x+1)>>1);
   return x;
 }
 /* 
@@ -304,11 +306,15 @@ int isPositive(int x) {
  */
 int isLessOrEqual(int x, int y) {
   /*if the first number is negtive ,the second is positive or 0, then true
+  if the second number is positive or 0,the second is negative, then false
   else we can judge wheter y-x>=0*/
-  int signCondition=((x>>31)&1)& !((y>>31)&1);
+  int signx=(x>>31)&1;
+  int signy=(y>>31)&1;
+  int signCondition=signx&(!signy);
+  int sameSign=!(signx^signy);
   int diff=y+(~x+1);
-  int diffSign=(diff>>31)&1);
-  return signCondition | !diffSign;
+  int diffSign=(diff>>31)&1;
+  return signCondition | (sameSign &!diffSign);
 }
 /*
  * ilog2 - return floor(log base 2 of x), where x > 0
@@ -340,10 +346,11 @@ int ilog2(int x) {
  *   Rating: 2
  */
 unsigned float_neg(unsigned uf) {
- unsigned ret=uf^(0x80000000);
- unsigned tmp=uf&(0x7fffffff);
- if(tmp>0x7f800000) ret=tmp;
- return ret;
+  /*flip the sign bit, judge wheather it is NaN*/
+  unsigned ret=uf^(0x80000000);
+  unsigned tmp=uf&(0x7fffffff);
+  if(tmp>0x7f800000) ret=uf;
+  return ret;
 }
 /* 
  * float_i2f - Return bit-level equivalent of expression (float) x
@@ -355,21 +362,22 @@ unsigned float_neg(unsigned uf) {
  *   Rating: 4
  */
 unsigned float_i2f(int x) {
+  int sign,i,exponent,fraction_mask,fraction,error,delta;
   if(x==0) return 0;//float 0.0's bits are all 0
   if(x==0x80000000) return 0xCF000000; //x=-2^31 avoid underflow when negative
-  int sign=(x>>31) &1;
+  sign=(x>>31) &1;
   if(sign) x=-x;
-  int i=30;
+  i=30;
   while(!(x>>i)) --i;//see the highest bits of x;
-  int exponent=i+127;// 127 is bias
+  exponent=i+127;// 127 is bias
   x=x<<(31-i);//clean all those zeros of high bits
   fraction_mask=0x7fffff;//(1<<23)-1
-  int fraction=(x>>8)&fraction_mask;//right shift 8 bits to become the fraction
-  int error=x & 0xff;//the lowest 8 bit of x
+  fraction=(x>>8)&fraction_mask;//right shift 8 bits to become the fraction
+  error=x & 0xff;//the lowest 8 bit of x
   //if the error in fraction part is greater than a half, add 1 on the LSB of fraction part
   //if the error in fraction part is equal to a half and LSB is odd,add 1 on the LSB of fraction part
   //namely round to even
-  int delta= x>128 || ((x==128)&(fraction &1));
+  delta= error>128 || ((error==128)&(fraction &1));
   fraction=fraction+delta;
   if(fraction>>23){//if after rounding fraction is longer than 23bits
     fraction=fraction&fraction_mask;
@@ -392,14 +400,14 @@ unsigned float_twice(unsigned uf) {
   int signbit=0x80000000&uf;
   int ret;
    /*denormalized, shift sigificand left by one bit(keep sign unchanged) */
-  if(uf&(0x7f800000)==0) {
+  if((uf&0x7f800000)==0) {
     ret=(uf<<1)|(signbit); 
     return ret;
   }
   /*Infinity or NaN, do nothing*/
-  if(uf&(0x7f800000)==0x7f800000) return uf;
+  if((uf&0x7f800000)==0x7f800000) return uf;
   /*normalized, add exponent by 1,if overflow return inifinity*/
-  ret=uf+1<<23;
-  if(ret&((0x7f800000)==0x7f800000)) ret=((ret>>23)<<23)&signbit;
+  ret=uf+(1<<23);
+  if((ret&0x7f800000)==0x7f800000) ret=(ret>>23)<<23;
   return ret;
 }
